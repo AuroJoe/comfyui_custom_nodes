@@ -1,4 +1,4 @@
-#docker#!/usr/bin/env bash
+#!/usr/bin/env bash
 # build.sh - 构建并推送 ComfyUI 镜像（支持日志输出，版本号含当天日期）
 
 set -euo pipefail
@@ -8,7 +8,7 @@ if [ -f "/opt/conda/etc/profile.d/conda.sh" ]; then
   source /opt/conda/etc/profile.d/conda.sh
   conda activate py312 || { echo "❌ 激活 py312 环境失败"; exit 1; }
 else
-  echo "❌ 未找到 Conda 配置文件，跳过环境激活"
+  echo "⚠️ 未找到 Conda 配置文件，跳过环境激活"
 fi
 
 # ========== 基本参数配置（含日期版本号） ==========
@@ -24,9 +24,9 @@ DATE_VERSION=$(date +'%Y%m%d')
 IMAGE_NAME="docker.cnb.cool/luojunhao/comfyui_alpha"
 TAG="${DATE_VERSION}"  # 版本号为当天日期，如 20250805
 
-# Dockerfile 路径与构建上下文
-DOCKERFILE_PATH="DOCKERFILE_PATH="/workspace/assets/dockerfile"
-CONTEXT_DIR="${SCRIPT_DIR}/../../"
+# Dockerfile 路径与构建上下文（修复语法错误并使用绝对路径）
+DOCKERFILE_PATH="/workspace/dockerfile"  # 修正了错误的双引号赋值
+CONTEXT_DIR="/workspace/"  # 使用绝对路径避免解析问题
 
 # ========== 日志重定向 ==========
 : > "$BUILD_LOG"
@@ -64,23 +64,22 @@ if [ ! -f "$DOCKERFILE_PATH" ]; then
   exit 1
 fi
 
-# ========== 构建并推送镜像 ==========
+# ========== 构建并推送镜像（强制无缓存） ==========
 echo -e "\n🔨 开始构建镜像（版本: ${DATE_VERSION}）..."
 docker buildx build \
+  --no-cache \  # 强制无缓存构建，解决 blob 问题
   --progress=plain \
   --platform=linux/amd64 \
   --tag "$IMAGE_NAME:$TAG" \
   --tag "$IMAGE_NAME:latest" \
   -f "$DOCKERFILE_PATH" \
   "$CONTEXT_DIR" \
-  --push
+  --push || { echo "❌ 构建推送失败"; exit 1; }
 
 # ========== 清理缓存 ==========
 echo -e "\n🧹 清理 Docker 缓存..."
-docker builder prune -f
-docker image prune -f
-docker container prune -f
-docker volume prune -f
+docker builder prune -a -f  # 清理所有构建器缓存
+docker system prune -a -f   # 深度清理所有无用资源
 echo "✅ 缓存清理完成"
 
 # ========== 合并日志到 system.log ==========
@@ -93,7 +92,7 @@ echo -e "===== [$(date +'%Y-%m-%d %H:%M:%S')] 构建日志（版本: ${DATE_VERS
 echo -e "\n✅ 镜像构建成功！"
 echo "📌 构建版本号: ${DATE_VERSION}"
 echo "📥 拉取命令: docker pull $IMAGE_NAME:$TAG"
-echo "📥 拉取最新版: docker pull $IMAGE_NAME:latest"  # 若添加了 latest 标签
+echo "📥 拉取最新版: docker pull $IMAGE_NAME:latest"
 echo "🌐 镜像地址: https://docker.cnb.cool/luojunhao/comfyui_alpha:$TAG"
 echo "🕒 结束时间: $(date +'%Y-%m-%d %H:%M:%S')"
 echo "📄 构建日志已保存至: $BUILD_LOG"

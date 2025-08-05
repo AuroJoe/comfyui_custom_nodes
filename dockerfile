@@ -94,16 +94,21 @@ RUN git init && \
 # ==================== 拷贝节点安装脚本 ====================
 # 你的节点脚本在/workspace/assets/nodes/，直接使用本地路径（无需复制，通过挂载生效）
 # 若需构建时内置，可改为：COPY assets/nodes/ /workspace/assets/nodes/
-RUN chmod +x /workspace/assets/nodes/manage_nodes.sh  # 确保脚本可执行
+COPY assets/nodes/ /workspace/assets/nodes/
+
+# 然后执行权限设置（原第 97 行）
+RUN chmod +x /workspace/assets/nodes/node_manager.sh
 
 # ==================== 安装自定义节点 ====================
 RUN --mount=type=cache,target=/root/.cache/pip \
     source $CONDA_DIR/etc/profile.d/conda.sh && \
     conda activate py312 && \
+    echo '在 py312 环境中安装依赖...' && \
+    pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 torchaudio==2.7.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install diffusers==0.34.0 && \
     echo '验证 Conda 环境 py312 是否正常工作...' && \
     python -c 'import torch, torchvision, diffusers; print(torch.__version__, torchvision.__version__, diffusers.__version__)' && \
-    # 执行你的节点管理脚本（路径适配assets/nodes）
-    bash /workspace/assets/nodes/manage_nodes.sh
+    bash /workspace/assets/nodes/node_manager.sh setup
 
 # ==================== VS Code 终端配置====================
 RUN mkdir -p /root/.vscode-server/data/Machine /root/.local/share/code-server/Machine && \
@@ -167,8 +172,9 @@ RUN echo 'alias monitor="btop"' >> /root/.bashrc && \
     echo 'source $CONDA_DIR/etc/profile.d/conda.sh' >> /root/.bashrc && \
     echo 'source $CONDA_DIR/etc/profile.d/conda.sh' >> /root/.profile
 
-# ==================== Entrypoint 设置（适配你的assets/main路径） ====================
-# 使用你目录中的entrypoint.sh（/workspace/assets/main/entrypoint.sh）
+# ==================== Entrypoint 设置 ====================
+COPY assets/main/entrypoint.sh /workspace/assets/main/entrypoint.sh
+# 赋予执行权限
 RUN chmod +x /workspace/assets/main/entrypoint.sh
 
 # ==================== 默认进入 Conda 环境 ====================

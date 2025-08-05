@@ -2,7 +2,7 @@ $:
   vscode:
     - docker:
         image:
-          name: docker.cnb.cool/luojunhao/comfyuialpha:latest
+          name: docker.cnb.cool/luojunhao/comfyui_alpha:latest
           dockerUser: $CNB_TOKEN_USER_NAME
           dockerPassword: $CNB_TOKEN
       runner:

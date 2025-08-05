@@ -1,12 +1,15 @@
 #!/bin/bash
-# 子模块更新脚本（精简输出版）
+# 子模块更新脚本（日志整合版）
 
 # 目录配置
 WORKSPACE_DIR="/workspace"
 COMFYUI_DIR="${WORKSPACE_DIR}/ComfyUI"
-LOG_FILE="/workspace/assets/main/submodule_update.log"
+LOG_DIR="/workspace/assets/logs"  # 统一日志文件夹
 
-# 输出控制：终端只显示关键信息，详细日志写入文件
+# 创建统一日志目录（确保存在）
+mkdir -p "$LOG_DIR"
+
+# 输出控制：终端显示关键信息，详细日志写入统一目录
 log_terminal() {
   echo "$1"
 }
@@ -14,7 +17,8 @@ log_terminal() {
 log_detail() {
   local level=$1
   local msg=$2
-  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $msg" >> "$LOG_FILE"
+  # 所有日志整合到一个文件，添加模块标识便于区分
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SUBMODULE] [$level] $msg" >> "${LOG_DIR}/system.log"
 }
 
 # 检查目录是否存在

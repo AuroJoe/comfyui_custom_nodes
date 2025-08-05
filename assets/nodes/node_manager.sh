@@ -66,8 +66,8 @@ setup_nodes() {
     fi
   done
 
-  # 数量校验（排除隐藏目录）
-  actual_count=$(find "$CUSTOM_NODES_DIR" -maxdepth 1 -xtype d ! -name "." ! -name ".*" | wc -l)
+  # 数量校验：只统计一级子目录（排除父目录、隐藏目录、符号链接）
+  actual_count=$(find "$CUSTOM_NODES_DIR" -maxdepth 1 -mindepth 1 -xtype d ! -name ".*" | wc -l)
   log_detail "INFO" "实际目录节点数: $actual_count"
 
   if [ "$expected_count" -ne "$actual_count" ]; then

@@ -3,25 +3,30 @@
 # 环境启动自动同步：bash /workspace/assets/nodes/node_manager.sh setup
 # 手动提交更新：bash /workspace/assets/nodes/node_manager.sh push
 
-# 目录配置（适配你的结构）
+# 目录配置
 CUSTOM_NODES_DIR="/workspace/ComfyUI/custom_nodes"
 NODE_LIST_FILE="/workspace/assets/nodes/nodes_list"
-LOG_DIR="/workspace/assets/logs"  # 统一日志文件夹
+LOG_DIR="/workspace/assets/logs"
 WORKSPACE_DIR="/workspace"
 
-# 创建统一日志目录
+# 创建日志目录
 mkdir -p "$LOG_DIR"
+LOG_FILE="${LOG_DIR}/system.log"
 
-# 精简日志输出：终端显示关键信息，详细日志写入统一目录
+# 关键：首次运行时清空日志文件（仅在setup模式下执行，避免push时重复清空）
+if [ "$1" = "setup" ] && [ -f "$LOG_FILE" ]; then
+  > "$LOG_FILE"  # 清空日志
+fi
+
+# 日志函数
 log_terminal() {
-  echo "$1"  # 终端只显示简短提示
+  echo "$1"
 }
 
 log_detail() {
   local level=$1
   local msg=$2
-  # 所有日志整合到一个文件
-  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [NODE_MANAGER] [$level] $msg" >> "${LOG_DIR}/system.log"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [NODE_MANAGER] [$level] $msg" >> "$LOG_FILE"
 }
 
 # 节点同步逻辑（setup模式）
@@ -43,7 +48,7 @@ setup_nodes() {
   expected_count=${#node_repos[@]}
   log_detail "INFO" "清单节点数: $expected_count"
 
-  # 处理节点（仅显示异常，成功不输出）
+  # 处理节点
   for repo in "${node_repos[@]}"; do
     node_name=$(basename "$repo" .git)
     node_dir="$CUSTOM_NODES_DIR/$node_name"
@@ -61,8 +66,8 @@ setup_nodes() {
     fi
   done
 
-  # 数量校验：只统计目录（排除文件）
-  actual_count=$(find "$CUSTOM_NODES_DIR" -maxdepth 1 -type d ! -name "." ! -name ".*" | wc -l)
+  # 数量校验（排除隐藏目录）
+  actual_count=$(find "$CUSTOM_NODES_DIR" -maxdepth 1 -xtype d ! -name "." ! -name ".*" | wc -l)
   log_detail "INFO" "实际目录节点数: $actual_count"
 
   if [ "$expected_count" -ne "$actual_count" ]; then
@@ -70,7 +75,6 @@ setup_nodes() {
   else
     log_terminal "✅ 节点同步完成"
   fi
-  log_detail "INFO" "同步结束"
 }
 
 # 提交推送逻辑（push模式）
@@ -78,10 +82,10 @@ push_changes() {
   log_terminal "提交更新..."
   log_detail "INFO" "开始提交流程"
   
-  # 清理嵌套仓库（不输出）
+  # 清理嵌套仓库
   find "$CUSTOM_NODES_DIR" -mindepth 2 -type d -name ".git" -exec rm -rf {} + >/dev/null 2>&1
 
-  # 提交操作（仅显示结果）
+  # 提交操作
   cd "$WORKSPACE_DIR" && {
     git add . >/dev/null 2>&1
     git commit -m "同步节点（$(date +'%Y-%m-%d')）" >/dev/null 2>&1

@@ -8,10 +8,9 @@ $:
       runner:
         tags: cnb:arch:amd64:gpu
       env:
-        # 启动脚本路径调整为/assets/nodes/
         CNB_WELCOME_EXECUTE_COMMAND: >
           bash /workspace/assets/nodes/node_manager.sh setup &&
-          bash /workspace/assets/main/update_comfyui_submodule.sh  # 子模块脚本仍在main目录
+          bash /workspace/assets/main/update_comfyui_submodule.sh
       services:
         - vscode
         - docker

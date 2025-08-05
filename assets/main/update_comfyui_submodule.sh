@@ -1,40 +1,63 @@
 #!/bin/bash
-# /workspace/assets/main/update_comfyui_submodule.sh
+# 子模块更新脚本（精简输出版）
 
-# 定义工作目录（确保与你的实际目录一致）
+# 目录配置
 WORKSPACE_DIR="/workspace"
 COMFYUI_DIR="${WORKSPACE_DIR}/ComfyUI"
+LOG_FILE="/workspace/assets/main/submodule_update.log"
 
-# 函数：检查目录是否存在
+# 输出控制：终端只显示关键信息，详细日志写入文件
+log_terminal() {
+  echo "$1"
+}
+
+log_detail() {
+  local level=$1
+  local msg=$2
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $msg" >> "$LOG_FILE"
+}
+
+# 检查目录是否存在
 check_directory() {
   if [ ! -d "$1" ]; then
-    echo "错误：目录 $1 不存在，请检查路径是否正确"
+    log_terminal "❌ 目录不存在: $1"
+    log_detail "ERROR" "目录验证失败: $1"
     exit 1
   fi
 }
 
-# 1. 检查外层仓库目录
+# 主逻辑
+log_terminal "更新ComfyUI子模块..."
+log_detail "INFO" "开始子模块更新流程"
+
+# 检查工作目录
 check_directory "${WORKSPACE_DIR}"
 cd "${WORKSPACE_DIR}" || exit
 
-# 2. 确保外层仓库处于main分支并拉取最新配置
-echo "拉取外层仓库最新代码..."
-git checkout main || git checkout -b main  # 若main分支不存在则创建
-git pull origin main --rebase  # 拉取最新代码并变基，避免冲突
+# 拉取外层仓库更新（静默执行，仅提示结果）
+if git checkout main >/dev/null 2>&1 && git pull origin main --rebase >/dev/null 2>&1; then
+  log_detail "INFO" "外层仓库更新成功"
+else
+  log_terminal "⚠️ 外层仓库更新失败"
+  log_detail "WARN" "外层仓库拉取失败"
+fi
 
-# 3. 初始化并更新子模块
-echo "初始化子模块..."
-git submodule init || echo "子模块已初始化，跳过初始化步骤"
+# 初始化并更新子模块（静默执行）
+if git submodule init >/dev/null 2>&1 && git submodule update --recursive >/dev/null 2>&1; then
+  log_detail "INFO" "子模块初始化完成"
+else
+  log_terminal "⚠️ 子模块初始化失败"
+  log_detail "WARN" "子模块初始化过程出错"
+fi
 
-echo "更新子模块内容..."
-git submodule update --recursive  # --recursive确保子模块的子依赖也更新
-
-# 4. 拉取ComfyUI官方最新代码（子模块自身更新）
+# 更新ComfyUI本身（静默执行）
 check_directory "${COMFYUI_DIR}"
 cd "${COMFYUI_DIR}" || exit
-echo "拉取ComfyUI官方最新代码..."
-git checkout master  # 切换到ComfyUI的默认分支（官方默认是master）
-git pull origin master
 
-# 5. 完成提示
-echo "子模块更新完成！ComfyUI目录已同步至最新版本"
+if git checkout master >/dev/null 2>&1 && git pull origin master >/dev/null 2>&1; then
+  log_terminal "✅ ComfyUI更新完成"
+  log_detail "INFO" "ComfyUI主仓库更新成功"
+else
+  log_terminal "⚠️ ComfyUI更新失败"
+  log_detail "WARN" "ComfyUI主仓库拉取失败"
+fi

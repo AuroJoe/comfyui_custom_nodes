@@ -1,10 +1,11 @@
 #!/bin/bash
-# 功能：同步nodes_list清单到custom_nodes（不使用子模块，避免嵌套问题）
+# 功能：在ComfyUI子模块内同步nodes_list（修复提交和更新失败）
 # 用法：bash node_manager.sh sync
 
-# 保持原有目录结构（在ComfyUI子模块内部）
+# 保持目录在ComfyUI子模块内
 CUSTOM_NODES_DIR="/workspace/ComfyUI/custom_nodes"
 NODE_LIST_FILE="/workspace/assets/nodes/nodes_list"
+COMFYUI_SUBMODULE_DIR="/workspace/ComfyUI"  # ComfyUI子模块路径
 WORKSPACE_DIR="/workspace"
 LOG_DIR="/workspace/assets/logs"
 
@@ -23,14 +24,13 @@ log_detail() {
   echo "[$(date +'%Y-%m-%d %H:%M:%S')] [NODE_MANAGER] [$level] $msg" >> "$LOG_FILE"
 }
 
-# 读取nodes_list中的仓库列表（过滤注释和空行）
+# 读取nodes_list中的仓库列表
 read_nodes_list() {
   grep -v '^\s*#' "$NODE_LIST_FILE" | grep -v '^\s*$' | sort
 }
 
-# 读取当前custom_nodes中已存在的节点目录（从URL提取的名称）
+# 读取当前已存在的节点（从URL提取名称）
 read_existing_nodes() {
-  # 遍历nodes_list中的URL，检查对应目录是否存在（避免无关目录干扰）
   while read -r repo_url; do
     if [ -n "$repo_url" ]; then
       node_name=$(basename "$repo_url" .git)
@@ -41,53 +41,61 @@ read_existing_nodes() {
   done < <(read_nodes_list) | sort
 }
 
-# 同步节点：通过git clone/pull管理，不使用子模块
+# 自动检测仓库的默认分支（解决更新失败）
+get_default_branch() {
+  local repo_url=$1
+  # 尝试获取远程默认分支（支持HTTPS和SSH格式）
+  local branch=$(git ls-remote --symref "$repo_url" HEAD | awk '/^ref:/ {sub(/refs\/heads\//, "", $2); print $2}')
+  # 若获取失败，默认使用main或master
+  echo "${branch:-main}"
+}
+
+# 同步节点
 sync_nodes() {
   log_terminal "开始同步nodes_list到custom_nodes..."
-  log_detail "INFO" "同步节点流程启动（非子模块模式）"
+  log_detail "INFO" "同步节点流程启动（子模块内模式）"
 
-  # 获取清单和现有节点的仓库列表
   local nodes_list=$(read_nodes_list)
   local existing_nodes=$(read_existing_nodes)
 
-  # 临时文件存储列表（用于对比）
   echo "$nodes_list" > /tmp/nodes_list.txt
   echo "$existing_nodes" > /tmp/existing_nodes.txt
 
-  # 1. 处理新增节点（清单有，本地无）
+  # 1. 新增节点
   log_terminal "检查新增节点..."
   comm -23 /tmp/nodes_list.txt /tmp/existing_nodes.txt | while read -r repo_url; do
     if [ -n "$repo_url" ]; then
       node_name=$(basename "$repo_url" .git)
       node_dir="${CUSTOM_NODES_DIR}/${node_name}"
 
-      # 克隆仓库（不使用子模块，直接作为普通目录）
       if git clone "$repo_url" "$node_dir" >/dev/null 2>&1; then
-        # 移除节点目录内的.git文件夹（避免嵌套Git仓库，可选）
-        rm -rf "${node_dir}/.git"
+        rm -rf "${node_dir}/.git"  # 移除嵌套Git仓库
         log_terminal "✅ 新增节点: $node_name"
-        log_detail "INFO" "克隆节点成功: $repo_url → $node_dir"
+        log_detail "INFO" "克隆节点成功: $repo_url"
       else
-        log_terminal "⚠️ 新增节点失败: $node_name"
-        log_detail "ERROR" "克隆节点失败: $repo_url"
+        log_terminal "⚠️ 新增节点失败: $node_name（网络或URL错误）"
+        log_detail "ERROR" "克隆失败: $repo_url"
       fi
     fi
   done
 
-  # 2. 处理更新节点（清单和本地都有）
+  # 2. 更新节点（自动适配分支）
   log_terminal "检查节点更新..."
   comm -12 /tmp/nodes_list.txt /tmp/existing_nodes.txt | while read -r repo_url; do
     if [ -n "$repo_url" ]; then
       node_name=$(basename "$repo_url" .git)
       node_dir="${CUSTOM_NODES_DIR}/${node_name}"
 
-      # 进入节点目录拉取最新代码（若保留.git文件夹则可更新）
       if [ -d "${node_dir}/.git" ]; then
-        cd "$node_dir" && git pull origin main >/dev/null 2>&1 && {
-          log_detail "INFO" "更新节点成功: $node_name"
-        } || {
-          log_terminal "⚠️ 节点更新失败: $node_name"
-          log_detail "WARN" "拉取节点更新失败: $repo_url"
+        # 检测节点仓库的默认分支
+        branch=$(get_default_branch "$repo_url")
+        cd "$node_dir" && {
+          if git pull origin "$branch" >/dev/null 2>&1; then
+            log_detail "INFO" "更新节点成功: $node_name（分支: $branch）"
+          else
+            log_terminal "⚠️ 节点更新失败: $node_name（分支: $branch）"
+            log_detail "WARN" "拉取失败: $repo_url（分支: $branch）"
+          fi
         }
       else
         log_detail "INFO" "节点无.git目录，跳过更新: $node_name"
@@ -95,26 +103,30 @@ sync_nodes() {
     fi
   done
 
-  # 3. 处理删除节点（本地有，清单无）
+  # 3. 删除节点
   log_terminal "检查需删除的节点..."
-  # 找出custom_nodes中存在但不在清单中的节点目录
   find "$CUSTOM_NODES_DIR" -maxdepth 1 -mindepth 1 -type d ! -name ".*" | while read -r node_dir; do
     node_name=$(basename "$node_dir")
-    # 检查该节点是否在nodes_list中
+    # 检查节点是否在清单中
     if ! grep -q "/${node_name}\.git" "$NODE_LIST_FILE" && \
        ! grep -q "/${node_name}$" "$NODE_LIST_FILE"; then
-      # 不在清单中，删除目录
       rm -rf "$node_dir"
       log_terminal "✅ 移除节点: $node_name"
-      log_detail "INFO" "删除节点目录: $node_dir"
+      log_detail "INFO" "删除节点: $node_dir"
     fi
   done
 
-  # 4. 提交节点变更到外层仓库（作为普通文件）
+  # 4. 提交变更（关键修复：提交ComfyUI子模块的整体变化）
+  # 因为custom_nodes在ComfyUI子模块内，需通过提交子模块引用实现同步
   cd "$WORKSPACE_DIR" && {
-    git add "$CUSTOM_NODES_DIR"
-    git commit -m "同步nodes_list节点（$(date +'%Y-%m-%d')）" >/dev/null 2>&1
-    git push origin main >/dev/null 2>&1 && log_terminal "✅ 节点变更已推送到远程"
+    # 提交ComfyUI子模块（包含其内部custom_nodes的变化）
+    git add "$COMFYUI_SUBMODULE_DIR"
+    git commit -m "同步custom_nodes节点（$(date +'%Y-%m-%d')）" >/dev/null 2>&1
+    if git push origin main >/dev/null 2>&1; then
+      log_terminal "✅ 节点变更已通过ComfyUI子模块推送到远程"
+    else
+      log_terminal "⚠️ 推送失败，请手动提交ComfyUI子模块"
+    fi
   }
 
   # 验证数量

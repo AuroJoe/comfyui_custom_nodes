@@ -1,10 +1,12 @@
-# 忽略日志文件
-assets/logs/*.log  # 忽略logs目录下所有.log文件
-assets/logs/   
+# 忽略日志文件（精确匹配 logs 目录下的所有 .log 文件）
+/assets/logs/*.log
 
-# 忽略特定类型的文件（如临时文件）
+# 可选：如果需要忽略整个 logs 目录（包括子目录和所有文件）
+# /assets/logs/
+
+# 忽略临时文件和备份文件
 *.tmp
 *.bak
 
-# 忽略子模块内的某个文件（如ComfyUI/custom_nodes/temp.json）
-ComfyUI/custom_nodes/temp.json
+# 忽略 ComfyUI 子模块内的临时 JSON 文件
+/ComfyUI/custom_nodes/*.json

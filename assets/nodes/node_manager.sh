@@ -58,14 +58,17 @@ setup_nodes() {
     fi
   done
 
-  # 数量校验
-  actual_count=$(ls -1 "$CUSTOM_NODES_DIR" 2>/dev/null | wc -l)
+  # 数量校验：只统计目录（排除文件）
+  # 使用find命令仅列出目录，再统计数量
+  actual_count=$(find "$CUSTOM_NODES_DIR" -maxdepth 1 -type d ! -name "." | wc -l)
+  log_detail "INFO" "实际目录节点数: $actual_count"
+
   if [ "$expected_count" -ne "$actual_count" ]; then
     log_terminal "⚠️ 节点数量不一致（清单:$expected_count 实际:$actual_count）"
   else
     log_terminal "✅ 节点同步完成"
   fi
-  log_detail "INFO" "同步结束（实际节点数:$actual_count）"
+  log_detail "INFO" "同步结束"
 }
 
 # 提交推送逻辑（push模式）

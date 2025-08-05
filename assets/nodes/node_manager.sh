@@ -1,86 +1,98 @@
 #!/bin/bash
 # 用法：
-# 环境启动自动同步节点：bash /workspace/assets/nodes/node_manager.sh setup
+# 环境启动自动同步：bash /workspace/assets/nodes/node_manager.sh setup
 # 手动提交更新：bash /workspace/assets/nodes/node_manager.sh push
 
-# 适配你的目录结构（关键调整）
+# 目录配置（适配你的结构）
 CUSTOM_NODES_DIR="/workspace/ComfyUI/custom_nodes"
-NODE_LIST_FILE="/workspace/assets/nodes/nodes_list"  # 清单路径
-LOG_FILE="/workspace/assets/nodes/node_manager.log"  # 日志路径
+NODE_LIST_FILE="/workspace/assets/nodes/nodes_list"
+LOG_FILE="/workspace/assets/nodes/node_manager.log"
 WORKSPACE_DIR="/workspace"
 
-# 日志函数
-log() {
+# 精简日志输出：仅终端显示关键信息，详细日志写入文件
+log_terminal() {
+  echo "$1"  # 终端只显示简短提示
+}
+
+log_detail() {
   local level=$1
   local msg=$2
-  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $msg" >> "$LOG_FILE"
-  echo "[$level] $msg"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [$level] $msg" >> "$LOG_FILE"  # 详细日志存文件
 }
 
 # 节点同步逻辑（setup模式）
 setup_nodes() {
-  log "INFO" "开始同步自定义节点（适配assets/nodes目录）..."
+  log_terminal "同步自定义节点..."
+  log_detail "INFO" "开始节点同步流程"
+  
   mkdir -p "$CUSTOM_NODES_DIR"
   touch "$LOG_FILE"
 
-  # 检查清单文件是否存在（路径适配）
+  # 检查清单文件
   if [ ! -f "$NODE_LIST_FILE" ]; then
-    log "ERROR" "节点清单 $NODE_LIST_FILE 不存在，请确认路径"
+    log_terminal "❌ 节点清单不存在"
+    log_detail "ERROR" "未找到 $NODE_LIST_FILE"
     exit 1
   fi
 
-  # 读取清单（过滤注释和空行）
+  # 读取清单
   mapfile -t node_repos < <(grep -v '^\s*#' "$NODE_LIST_FILE" | grep -v '^\s*$')
   expected_count=${#node_repos[@]}
-  log "INFO" "清单定义节点数：$expected_count"
+  log_detail "INFO" "清单节点数: $expected_count"
 
-  # 克隆/更新节点
+  # 处理节点（仅显示异常，成功不输出）
   for repo in "${node_repos[@]}"; do
     node_name=$(basename "$repo" .git)
     node_dir="$CUSTOM_NODES_DIR/$node_name"
     
     if [ -d "$node_dir" ]; then
-      log "INFO" "更新节点：$node_name"
-      cd "$node_dir" && git pull origin main || log "WARN" "节点 $node_name 更新失败"
+      cd "$node_dir" && git pull origin main >/dev/null 2>&1 || {
+        log_terminal "⚠️ $node_name 更新失败"
+        log_detail "WARN" "$node_name 更新失败"
+      }
     else
-      log "INFO" "安装节点：$node_name"
-      git clone "$repo" "$node_dir" || log "ERROR" "节点 $node_name 克隆失败"
+      git clone "$repo" "$node_dir" >/dev/null 2>&1 || {
+        log_terminal "⚠️ $node_name 安装失败"
+        log_detail "ERROR" "$node_name 克隆失败"
+      }
     fi
   done
 
   # 数量校验
   actual_count=$(ls -1 "$CUSTOM_NODES_DIR" 2>/dev/null | wc -l)
-  log "INFO" "实际存在节点数：$actual_count"
-  
   if [ "$expected_count" -ne "$actual_count" ]; then
-    log "WARN" "节点数量不一致（清单：$expected_count，实际：$actual_count）"
+    log_terminal "⚠️ 节点数量不一致（清单:$expected_count 实际:$actual_count）"
   else
-    log "INFO" "节点同步完成"
+    log_terminal "✅ 节点同步完成"
   fi
+  log_detail "INFO" "同步结束（实际节点数:$actual_count）"
 }
 
 # 提交推送逻辑（push模式）
 push_changes() {
-  log "INFO" "开始提交更新..."
+  log_terminal "提交更新..."
+  log_detail "INFO" "开始提交流程"
   
-  # 清理嵌套Git仓库
-  log "INFO" "清理custom_nodes中的嵌套.git目录..."
-  find "$CUSTOM_NODES_DIR" -mindepth 2 -type d -name ".git" -exec rm -rf {} +
+  # 清理嵌套仓库（不输出）
+  find "$CUSTOM_NODES_DIR" -mindepth 2 -type d -name ".git" -exec rm -rf {} + >/dev/null 2>&1
 
-  # 提交到外层仓库
-  cd "$WORKSPACE_DIR" || {
-    log "ERROR" "无法进入工作目录 $WORKSPACE_DIR"
-    exit 1
+  # 提交操作（仅显示结果）
+  cd "$WORKSPACE_DIR" && {
+    git add . >/dev/null 2>&1
+    git commit -m "同步节点（$(date +'%Y-%m-%d')）" >/dev/null 2>&1
+    if git push >/dev/null 2>&1; then
+      log_terminal "✅ 推送完成"
+    else
+      log_terminal "❌ 推送失败"
+      log_detail "ERROR" "git push执行失败"
+    fi
+  } || {
+    log_terminal "❌ 工作目录错误"
+    log_detail "ERROR" "无法进入 $WORKSPACE_DIR"
   }
-  
-  git add .
-  git commit -m "同步节点更新（$(date +'%Y-%m-%d')）"
-  git push || log "ERROR" "推送失败，请检查网络或权限"
-  
-  log "INFO" "提交完成"
 }
 
-# 按参数执行对应功能
+# 按参数执行
 case "$1" in
   setup) setup_nodes ;;
   push) push_changes ;;

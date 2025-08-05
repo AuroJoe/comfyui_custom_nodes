@@ -1,15 +1,16 @@
 #!/bin/bash
-# 子模块更新脚本（日志整合版）
+# 子模块更新脚本
 
 # 目录配置
 WORKSPACE_DIR="/workspace"
 COMFYUI_DIR="${WORKSPACE_DIR}/ComfyUI"
-LOG_DIR="/workspace/assets/logs"  # 统一日志文件夹
+LOG_DIR="/workspace/assets/logs"
+LOG_FILE="${LOG_DIR}/system.log"  # 统一日志文件
 
-# 创建统一日志目录（确保存在）
+# 创建日志目录
 mkdir -p "$LOG_DIR"
 
-# 输出控制：终端显示关键信息，详细日志写入统一目录
+# 日志函数（无需重复清空，由node_manager.sh在setup时统一处理）
 log_terminal() {
   echo "$1"
 }
@@ -17,8 +18,7 @@ log_terminal() {
 log_detail() {
   local level=$1
   local msg=$2
-  # 所有日志整合到一个文件，添加模块标识便于区分
-  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SUBMODULE] [$level] $msg" >> "${LOG_DIR}/system.log"
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] [SUBMODULE] [$level] $msg" >> "$LOG_FILE"
 }
 
 # 检查目录是否存在
@@ -38,7 +38,7 @@ log_detail "INFO" "开始子模块更新流程"
 check_directory "${WORKSPACE_DIR}"
 cd "${WORKSPACE_DIR}" || exit
 
-# 拉取外层仓库更新（静默执行，仅提示结果）
+# 拉取外层仓库更新
 if git checkout main >/dev/null 2>&1 && git pull origin main --rebase >/dev/null 2>&1; then
   log_detail "INFO" "外层仓库更新成功"
 else
@@ -46,7 +46,7 @@ else
   log_detail "WARN" "外层仓库拉取失败"
 fi
 
-# 初始化并更新子模块（静默执行）
+# 初始化并更新子模块
 if git submodule init >/dev/null 2>&1 && git submodule update --recursive >/dev/null 2>&1; then
   log_detail "INFO" "子模块初始化完成"
 else
@@ -54,7 +54,7 @@ else
   log_detail "WARN" "子模块初始化过程出错"
 fi
 
-# 更新ComfyUI本身（静默执行）
+# 更新ComfyUI本身
 check_directory "${COMFYUI_DIR}"
 cd "${COMFYUI_DIR}" || exit
 

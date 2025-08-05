@@ -1,4 +1,4 @@
-docker#!/usr/bin/env bash
+#docker#!/usr/bin/env bash
 # build.sh - 构建并推送 ComfyUI 镜像（支持日志输出，版本号含当天日期）
 
 set -euo pipefail

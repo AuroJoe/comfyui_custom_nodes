@@ -6,9 +6,12 @@ $:
           dockerUser: $CNB_TOKEN_USER_NAME
           dockerPassword: $CNB_TOKEN
       runner:
-        tags: cnb:arch:amd64:gpu  # 仅保留必要的GPU标签，符合平台语法
+        tags: cnb:arch:amd64:gpu
       env:
-        CNB_WELCOME_EXECUTE_COMMAND: bash /workspace/assets/main/update_comfyui_submodule.sh
+        # 启动脚本路径调整为/assets/nodes/
+        CNB_WELCOME_EXECUTE_COMMAND: >
+          bash /workspace/assets/nodes/node_manager.sh setup &&
+          bash /workspace/assets/main/update_comfyui_submodule.sh  # 子模块脚本仍在main目录
       services:
         - vscode
         - docker

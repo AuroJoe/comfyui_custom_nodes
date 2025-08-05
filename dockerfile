@@ -37,7 +37,7 @@ RUN set -eux && \
     # 创建 Conda 环境（保留py312作为默认）
     conda create -n py312 python=3.12 -y && \
     conda create -n py311 python=3.11 -y && \
-    conda create -n py311 python=3.10 -y && \
+    conda create -n py310 python=3.10 -y && \
     echo "source activate py312" > /etc/profile.d/conda_env.sh && \
     # 提前安装Python构建工具
     bash -c "source $CONDA_DIR/etc/profile.d/conda.sh && \
@@ -96,7 +96,7 @@ RUN git init && \
 # 若需构建时内置，可改为：COPY assets/nodes/ /workspace/assets/nodes/
 COPY assets/nodes/ /workspace/assets/nodes/
 
-# 然后执行权限设置（原第 97 行）
+# 然后执行权限设置
 RUN chmod +x /workspace/assets/nodes/node_manager.sh
 
 # ==================== 安装自定义节点 ====================

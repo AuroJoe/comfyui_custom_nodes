@@ -9,6 +9,10 @@ $:
         tags: cnb:arch:amd64:gpu
       env:
         CNB_WELCOME_EXECUTE_COMMAND: >
+          # 启动时先激活py312环境
+          source /opt/conda/etc/profile.d/conda.sh &&
+          conda activate py312 &&
+          # 再执行节点同步和子模块更新
           bash /workspace/assets/nodes/node_manager.sh setup &&
           bash /workspace/assets/main/update_comfyui_submodule.sh
       services:

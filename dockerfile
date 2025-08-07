@@ -123,21 +123,33 @@ RUN tee /root/.vscode-server/data/Machine/settings.json > /dev/null <<'EOF'
         },
         "Py312Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py312 && exec bash"],
+            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && exec bash -l"],
             "icon": "code",
-            "name": "Python 3.12"
+            "name": "Python 3.12",
+            "env": {
+                "CONDA_DEFAULT_ENV": "py312",
+                "PATH": "/opt/conda/envs/py312/bin:$PATH"
+            }
         },
         "Py311Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py311 && exec bash"],
+            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && exec bash -l"],
             "icon": "code",
-            "name": "Python 3.11"
+            "name": "Python 3.11",
+            "env": {
+                "CONDA_DEFAULT_ENV": "py311",
+                "PATH": "/opt/conda/envs/py311/bin:$PATH"
+            }
         },
         "Py310Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py310 && exec bash"],
+            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && exec bash -l"],
             "icon": "code",
-            "name": "Python 3.10"
+            "name": "Python 3.10",
+            "env": {
+                "CONDA_DEFAULT_ENV": "py310",
+                "PATH": "/opt/conda/envs/py310/bin:$PATH"
+            }
         },
         "SystemMonitor": {
             "path": "btop",

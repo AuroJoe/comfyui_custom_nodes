@@ -16,36 +16,42 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 # ==================== 系统依赖与基础配置 ====================
 RUN set -eux && \
+    # 禁用apt的交互模式和警告输出
+    echo 'APT::Get::Assume-Yes "true";' > /etc/apt/apt.conf.d/90assumeyes && \
+    echo 'DPkg::Options "--force-confold";' >> /etc/apt/apt.conf.d/90assumeyes && \
     # 更换国内镜像源加速安装
     sed -i 's|archive.ubuntu.com|mirrors.cloud.tencent.com|g' /etc/apt/sources.list && \
     sed -i 's|security.ubuntu.com|mirrors.cloud.tencent.com|g' /etc/apt/sources.list && \
     # 配置时区
     ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
     # 安装系统基础工具
-    apt update && \
-    apt install -y --no-install-recommends \
+    apt update -qq && \
+    apt install -qq --no-install-recommends \
         git git-lfs curl wget axel unzip zip tar \
-        nano vim htop btop tmux \
+        nano vim-tiny htop btop tmux \
         net-tools iputils-ping procps lsof \
         build-essential gcc g++ libgl1-mesa-glx \
         libgl1 libglib2.0-0 libblas3 liblapack3 \
         ffmpeg unrar patool crudini && \
-    # 清理缓存
-    apt clean && rm -rf /var/lib/apt/lists/* && \
+    # 清理缓存和无用文档
+    apt clean -qq && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* && \
     # 初始化Git LFS
     git lfs install --force
 
 # ==================== Conda环境配置 ====================
 RUN set -eux && \
+    # 升级conda到最新版本以消除警告
+    conda update -n base -c defaults conda -y && \
     # 创建多版本Python环境（预安装pip基础工具）
     conda create -n py312 python=3.12 pip -y && \
     conda create -n py311 python=3.11 pip -y && \
     conda create -n py310 python=3.10 pip -y && \
     # 配置conda自动初始化
     conda init bash && \
-    # 默认激活py312环境
-    echo "conda activate $ENV_NAME" >> /root/.bashrc
-
+    # 清理conda缓存
+    conda clean -a -y
+    
 # ==================== 安装跨环境通用依赖 ====================
 SHELL ["/bin/bash", "-lic"]  # 使用登录shell确保conda初始化生效
 
@@ -116,19 +122,19 @@ RUN tee /root/.vscode-server/data/Machine/settings.json > /dev/null <<'EOF'
         },
         "Py312Env": {
             "path": "/bin/bash",
-            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py312 && exec bash -li"],
+            "args": ["-li", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py312 && export CONDA_ACTIVATED=1 && exec bash -li"],
             "icon": "code",
             "name": "Python 3.12"
         },
         "Py311Env": {
             "path": "/bin/bash",
-            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py311 && exec bash -li"],
+            "args": ["-li", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py311 && export CONDA_ACTIVATED=1 && exec bash -li"],
             "icon": "code",
             "name": "Python 3.11"
         },
         "Py310Env": {
             "path": "/bin/bash",
-            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py310 && exec bash -li"],
+            "args": ["-li", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py310 && export CONDA_ACTIVATED=1 && exec bash -li"],
             "icon": "code",
             "name": "Python 3.10"
         },
@@ -146,15 +152,26 @@ RUN cp /root/.vscode-server/data/Machine/settings.json /root/.local/share/code-s
 
 # ==================== Bash alias 与提示 ====================
 RUN set -eux && \
+    # 清空原有bashrc避免重复执行
+    > /root/.bashrc && \
+    # 基础别名
     echo 'alias monitor="btop"' >> /root/.bashrc && \
     echo 'alias py312="conda activate py312"' >> /root/.bashrc && \
     echo 'alias py311="conda activate py311"' >> /root/.bashrc && \
     echo 'alias py310="conda activate py310"' >> /root/.bashrc && \
     echo 'alias conda-list="conda env list"' >> /root/.bashrc && \
-    # 提前加载conda配置，确保终端启动时环境变量生效
-    echo 'source $CONDA_DIR/etc/profile.d/conda.sh' >> /root/.bashrc && \
-    echo 'echo -e "👉 环境切换命令：\n  - py312/py311/py310：切换Python环境\n  - conda-list：查看所有环境\n  - monitor：启动系统监控"' >> /root/.bashrc
-
+    # 加载conda配置
+    echo 'source /opt/conda/etc/profile.d/conda.sh' >> /root/.bashrc && \
+    # 仅在未通过终端指定环境时，才激活默认环境（避免覆盖终端选择的环境）
+    echo 'if [ -z "$CONDA_ACTIVATED" ]; then' >> /root/.bashrc && \
+    echo '  conda activate py312' >> /root/.bashrc && \
+    echo 'fi' >> /root/.bashrc && \
+    # 提示信息（只显示一次）
+    echo 'if [ -z "$PROMPT_SHOWN" ]; then' >> /root/.bashrc && \
+    echo '  echo -e "👉 环境切换命令：\n  - py312/py311/py310：切换Python环境\n  - conda-list：查看所有环境\n  - monitor：启动系统监控"' >> /root/.bashrc && \
+    echo '  export PROMPT_SHOWN=1' >> /root/.bashrc && \
+    echo 'fi' >> /root/.bashrc
+    
 # ==================== 容器启动配置 ====================
 COPY assets/main/entrypoint.sh $WORKSPACE/assets/main/entrypoint.sh
 RUN chmod +x $WORKSPACE/assets/main/entrypoint.sh

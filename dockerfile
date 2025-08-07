@@ -1,13 +1,12 @@
 # syntax=docker/dockerfile:1.6
 
 # ==================== 基础镜像 ====================
-FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-runtime
+FROM pytorch/pytorch:2.7.1-cuda12.8-cudnn9-devel
 
 # ==================== 环境变量 ====================
 ENV DEBIAN_FRONTEND=noninteractive \
     LANG=C.UTF-8 \
     TZ=Asia/Shanghai \
-    # 适配你的ComfyUI路径（位于/workspace/ComfyUI）
     COMFYUI_HOME=/workspace/ComfyUI \
     WORKSPACE=/workspace \
     ENV_NAME=py312 \
@@ -15,172 +14,156 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONWARNINGS=ignore::UserWarning \
     PIP_ROOT_USER_ACTION=ignore
 
-# ==================== 系统依赖与 Conda 环境 ====================
+# ==================== 系统依赖与基础配置 ====================
 RUN set -eux && \
-    # 更换镜像源和时区
+    # 更换国内镜像源加速安装
     sed -i 's|archive.ubuntu.com|mirrors.cloud.tencent.com|g' /etc/apt/sources.list && \
     sed -i 's|security.ubuntu.com|mirrors.cloud.tencent.com|g' /etc/apt/sources.list && \
+    # 配置时区
     ln -sf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone && \
-    # 安装基础系统工具
+    # 安装系统基础工具
     apt update && \
     apt install -y --no-install-recommends \
-        git git-lfs curl wget axel unzip zip tar file tree less \
-        nano vim htop btop nload jq rsync \
-        net-tools iputils-ping procps lsof tmux mlocate nmap \
-        build-essential gcc g++ libgl1-mesa-glx openssh-server bash \
-        libgl1 libglib2.0-0 \
-        libblas3 liblapack3 \
-        ffmpeg unrar patool \
-        crudini && \
+        git git-lfs curl wget axel unzip zip tar \
+        nano vim htop btop tmux \
+        net-tools iputils-ping procps lsof \
+        build-essential gcc g++ libgl1-mesa-glx \
+        libgl1 libglib2.0-0 libblas3 liblapack3 \
+        ffmpeg unrar patool crudini && \
+    # 清理缓存
     apt clean && rm -rf /var/lib/apt/lists/* && \
-    git lfs install --force && \
-    # 创建 Conda 环境（保留py312作为默认）
-    conda create -n py312 python=3.12 -y && \
-    conda create -n py311 python=3.11 -y && \
-    conda create -n py310 python=3.10 -y && \
-    echo "source activate py312" > /etc/profile.d/conda_env.sh && \
-    # 提前安装Python构建工具
-    bash -c "source $CONDA_DIR/etc/profile.d/conda.sh && \
-             conda activate py312 && \
-             python -m ensurepip --upgrade && \
-             pip install --no-cache-dir --force-reinstall pip && \
-             pip install --no-cache-dir --upgrade setuptools wheel build setuptools-scm"
+    # 初始化Git LFS
+    git lfs install --force
 
+# ==================== Conda环境配置 ====================
+RUN set -eux && \
+    # 创建多版本Python环境（预安装pip基础工具）
+    conda create -n py312 python=3.12 pip -y && \
+    conda create -n py311 python=3.11 pip -y && \
+    conda create -n py310 python=3.10 pip -y && \
+    # 配置conda自动初始化
+    conda init bash && \
+    # 默认激活py312环境
+    echo "conda activate $ENV_NAME" >> /root/.bashrc
 
-# ==================== SHELL（持久进入 Conda） ====================
-SHELL ["/bin/bash", "-c"]
+# ==================== 安装跨环境通用依赖 ====================
+SHELL ["/bin/bash", "-lic"]  # 使用登录shell确保conda初始化生效
 
-# ==================== 安装 Python 依赖 ====================
-# 仅使用 py312 原生环境，不安装额外依赖
-RUN source $CONDA_DIR/etc/profile.d/conda.sh && \
+# 为每个环境安装PyTorch和核心依赖
+RUN --mount=type=cache,target=/root/.cache/pip \
+    # 处理py312环境
     conda activate py312 && \
-    # 仅确保 pip 基础工具可用（不升级或安装其他库）
-    python -m ensurepip --upgrade
+    pip install --no-cache-dir --upgrade pip && \
+    pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 torchaudio==2.7.1+cu128 \
+        --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install --no-cache-dir diffusers==0.34.0 && \
+    # 处理py311环境
+    conda activate py311 && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 torchaudio==2.7.1+cu128 \
+        --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install --no-cache-dir diffusers==0.34.0 && \
+    # 处理py310环境
+    conda activate py310 && \
+    pip install --no-cache-dir --upgrade pip && \
+    pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 torchaudio==2.7.1+cu128 \
+        --index-url https://download.pytorch.org/whl/cu128 && \
+    pip install --no-cache-dir diffusers==0.34.0 && \
+    # 验证默认环境
+    conda activate $ENV_NAME && \
+    python -c "import torch, diffusers; print(f'PyTorch {torch.__version__} | Diffusers {diffusers.__version__}')"
 
-# ==================== 安装 code-server 与插件 ====================
-RUN curl -fsSL https://code-server.dev/install.sh | sh && \
+# ==================== 安装code-server及插件 ====================
+RUN set -eux && \
+    curl -fsSL https://code-server.dev/install.sh | sh && \
     code-server --install-extension redhat.vscode-yaml \
                 --install-extension dbaeumer.vscode-eslint \
                 --install-extension eamodio.gitlens \
                 --install-extension tencent-cloud.coding-copilot
 
-# ==================== 设置模型路径映射====================
-RUN mkdir -p $COMFYUI_HOME && \
-    # 模型实际路径为 /workspace/ComfyUI/models，因此 base_path 设为 ComfyUI 目录
+# ==================== ComfyUI模型路径配置 ====================
+RUN set -eux && \
+    mkdir -p $COMFYUI_HOME && \
     tee $COMFYUI_HOME/extra_model_paths.yaml > /dev/null <<EOF
 comfyui:
-    base_path: /workspace/ComfyUI  # 模型根目录为 ComfyUI 下的 models，因此 base_path 指向 ComfyUI
-    checkpoints: models/checkpoints/  # 完整路径：/workspace/ComfyUI/models/checkpoints/
-    clip: models/clip/                # 完整路径：/workspace/ComfyUI/models/clip/
-    clip_vision: models/clip_vision/  # 完整路径：/workspace/ComfyUI/models/clip_vision/
-    configs: models/configs/          # 完整路径：/workspace/ComfyUI/models/configs/
-    controlnet: models/controlnet/    # 完整路径：/workspace/ComfyUI/models/controlnet/
+    base_path: /workspace/ComfyUI
+    checkpoints: models/checkpoints/
+    clip: models/clip/
+    clip_vision: models/clip_vision/
+    configs: models/configs/
+    controlnet: models/controlnet/
     diffusion_models: |
-        models/diffusion_models       # 完整路径：/workspace/ComfyUI/models/diffusion_models/
-        models/unet                   # 完整路径：/workspace/ComfyUI/models/unet/
-    embeddings: models/embeddings/    # 完整路径：/workspace/ComfyUI/models/embeddings/
-    loras: models/loras/              # 完整路径：/workspace/ComfyUI/models/loras/
-    upscale_models: models/upscale_models/  # 完整路径：/workspace/ComfyUI/models/upscale_models/
-    vae: models/vae/                  # 完整路径：/workspace/ComfyUI/models/vae/
+        models/diffusion_models
+        models/unet
+    embeddings: models/embeddings/
+    loras: models/loras/
+    upscale_models: models/upscale_models/
+    vae: models/vae/
 EOF
 
-# ==================== 初始化 Git 仓库与子模块 ====================
-WORKDIR $WORKSPACE
-RUN git init && \
-    git submodule init && \
-    git submodule sync && \
-    git submodule update --init --recursive
-
-# ==================== 拷贝节点安装脚本 ====================
-# 你的节点脚本在/workspace/assets/nodes/，直接使用本地路径（无需复制，通过挂载生效）
-# 若需构建时内置，可改为：COPY assets/nodes/ /workspace/assets/nodes/
-COPY assets/nodes/ /workspace/assets/nodes/
-
-# 然后执行权限设置
-RUN chmod +x /workspace/assets/nodes/node_manager.sh
-
-# ==================== 安装自定义节点 ====================
-RUN --mount=type=cache,target=/root/.cache/pip \
-    source $CONDA_DIR/etc/profile.d/conda.sh && \
-    conda activate py312 && \
-    echo '在 py312 环境中安装依赖...' && \
-    pip install torch==2.7.1+cu128 torchvision==0.22.1+cu128 torchaudio==2.7.1+cu128 --index-url https://download.pytorch.org/whl/cu128 && \
-    pip install diffusers==0.34.0 && \
-    echo '验证 Conda 环境 py312 是否正常工作...' && \
-    python -c 'import torch, torchvision, diffusers; print(torch.__version__, torchvision.__version__, diffusers.__version__)' && \
-    bash /workspace/assets/nodes/node_manager.sh setup
-
-# ==================== VS Code 终端配置====================
-RUN mkdir -p /root/.vscode-server/data/Machine /root/.local/share/code-server/Machine && \
-    tee /root/.vscode-server/data/Machine/settings.json > /dev/null <<EOF
+# ==================== VS Code终端配置 ====================
+RUN set -eux && \
+    mkdir -p /root/.vscode-server/data/Machine /root/.local/share/code-server/Machine
+RUN tee /root/.vscode-server/data/Machine/settings.json > /dev/null <<'EOF'
 {
-    "terminal.integrated.defaultProfile.linux": "BaseTerminal",  // 默认终端不自动激活环境
+    "terminal.integrated.defaultProfile.linux": "BaseTerminal",
     "terminal.integrated.profiles.linux": {
         "BaseTerminal": {
             "path": "/bin/bash",
-            "args": ["-l"],  // 仅加载 bash 配置，不自动激活环境
+            "args": ["-li"],
             "icon": "terminal",
-            "name": "基础终端（可手动切换环境）"
+            "name": "基础终端"
         },
         "Py312Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py312 && exec bash"],
+            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py312 && exec bash -li"],
             "icon": "code",
-            "name": "Python 3.12 环境"
+            "name": "Python 3.12"
         },
         "Py311Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py311 && exec bash"],
+            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py311 && exec bash -li"],
             "icon": "code",
-            "name": "Python 3.11 环境"
+            "name": "Python 3.11"
         },
         "Py310Env": {
             "path": "/bin/bash",
-            "args": ["-l", "-c", "source /opt/conda/etc/profile.d/conda.sh && conda activate py310 && exec bash"],
+            "args": ["-li", "-c", "source $CONDA_DIR/etc/profile.d/conda.sh && conda activate py310 && exec bash -li"],
             "icon": "code",
-            "name": "Python 3.10 环境"
+            "name": "Python 3.10"
         },
         "SystemMonitor": {
             "path": "btop",
             "icon": "dashboard",
-            "name": "🖥️ 系统监控 btop"
+            "name": "系统监控 btop"
         }
     },
     "workbench.activityBar.location": "hidden",
     "window.menuBarVisibility": "classic"
 }
 EOF
-
 RUN cp /root/.vscode-server/data/Machine/settings.json /root/.local/share/code-server/Machine/settings.json
 
-
-# ==================== Bash 配置====================
-RUN echo 'alias monitor="btop"' >> /root/.bashrc && \
-    # 三个环境的快速激活别名
+# ==================== Bash alias 与提示 ====================
+RUN set -eux && \
+    echo 'alias monitor="btop"' >> /root/.bashrc && \
     echo 'alias py312="conda activate py312"' >> /root/.bashrc && \
     echo 'alias py311="conda activate py311"' >> /root/.bashrc && \
     echo 'alias py310="conda activate py310"' >> /root/.bashrc && \
-    # 查看环境列表的快捷命令
     echo 'alias conda-list="conda env list"' >> /root/.bashrc && \
-    # 终端启动时显示切换提示
-    echo 'echo "👉 环境切换命令："' >> /root/.bashrc && \
-    echo 'echo "   - 切换到 Python 3.12：py312"' >> /root/.bashrc && \
-    echo 'echo "   - 切换到 Python 3.11：py311"' >> /root/.bashrc && \
-    echo 'echo "   - 切换到 Python 3.10：py310"' >> /root/.bashrc && \
-    echo 'echo "   - 查看所有环境：conda-list"' >> /root/.bashrc && \
-    # 加载 conda 配置，但不自动激活任何环境
+    # 提前加载conda配置，确保终端启动时环境变量生效
     echo 'source $CONDA_DIR/etc/profile.d/conda.sh' >> /root/.bashrc && \
-    echo 'source $CONDA_DIR/etc/profile.d/conda.sh' >> /root/.profile
+    echo 'echo -e "👉 环境切换命令：\n  - py312/py311/py310：切换Python环境\n  - conda-list：查看所有环境\n  - monitor：启动系统监控"' >> /root/.bashrc
 
-# ==================== Entrypoint 设置 ====================
-COPY assets/main/entrypoint.sh /workspace/assets/main/entrypoint.sh
-# 赋予执行权限
-RUN chmod +x /workspace/assets/main/entrypoint.sh
+# ==================== 容器启动配置 ====================
+COPY assets/main/entrypoint.sh $WORKSPACE/assets/main/entrypoint.sh
+RUN chmod +x $WORKSPACE/assets/main/entrypoint.sh
 
-# ==================== 默认进入 Conda 环境 ====================
-ENV PATH="/opt/conda/envs/${ENV_NAME}/bin:$PATH"
-ENV CONDA_DEFAULT_ENV=$ENV_NAME
+# 配置环境变量优先级
+ENV PATH="$CONDA_DIR/envs/$ENV_NAME/bin:$CONDA_DIR/bin:$PATH" \
+    CONDA_DEFAULT_ENV=$ENV_NAME
 
-# ==================== 健康检查与容器入口 ====================
 HEALTHCHECK --interval=30s --timeout=10s CMD curl -f http://localhost:8188 || exit 1
-ENTRYPOINT ["/workspace/assets/main/entrypoint.sh"]
+
+ENTRYPOINT ["$WORKSPACE/assets/main/entrypoint.sh"]
+    

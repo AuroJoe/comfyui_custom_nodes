@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build.sh - 精简版ComfyUI镜像构建脚本（无调试代码）
+# build.sh - 精简版ComfyUI镜像构建脚本（无节点同步）
 
 set -euo pipefail
 
@@ -17,8 +17,8 @@ LOG_DIR="${SCRIPT_DIR}/../logs"
 mkdir -p "$LOG_DIR"
 BUILD_LOG="${LOG_DIR}/build.log"
 SYSTEM_LOG="${LOG_DIR}/system.log"
-: > "$BUILD_LOG"
-exec > >(tee -a "$BUILD_LOG") 2>&1
+: > "$BUILD_LOG"  # 清空日志文件
+exec > >(tee -a "$BUILD_LOG") 2>&1  # 重定向输出到日志和终端
 
 # ========== 版本与镜像配置 ==========
 DATE_VERSION=$(date +'%Y%m%d')
@@ -31,30 +31,12 @@ if [ ! -f "/workspace/dockerfile" ] || [ ! -d "/workspace/" ]; then
   exit 1
 fi
 
-MANAGE_NODES="/workspace/assets/nodes/node_manager.sh"
-if [ ! -f "$MANAGE_NODES" ]; then
-  echo "❌ 节点管理脚本不存在: $MANAGE_NODES"
-  exit 1
-fi
-
-# ========== 子模块与节点同步 ==========
-echo "🔄 初始化Git子模块..."
-cd /workspace/ || exit 1
-git submodule sync --recursive
-git submodule update --init --recursive
-echo "✅ 子模块初始化完成"
-
-echo "📦 执行节点同步..."
-bash "$MANAGE_NODES" setup || { echo "❌ 节点同步失败"; exit 1; }
-echo "✅ 节点同步完成"
-
 # ========== 构建镜像 ==========
 echo -e "\n🔨 开始构建镜像（版本: ${DATE_VERSION}）..."
 docker buildx build \
   --no-cache \
   --platform=linux/amd64 \
   --tag "${IMAGE_NAME}:${TAG}" \
-  --tag "${IMAGE_NAME}:latest" \
   -f /workspace/dockerfile \
   /workspace/ \
   --push || { echo "❌ 构建推送失败"; exit 1; }
@@ -75,6 +57,5 @@ echo -e "===== 构建日志结束 =====\n" >> "$SYSTEM_LOG"
 echo -e "\n✅ 镜像构建推送成功！"
 echo "📅 版本号: ${DATE_VERSION}"
 echo "📥 拉取指定版本: docker pull ${IMAGE_NAME}:${TAG}"
-echo "📥 拉取最新版本: docker pull ${IMAGE_NAME}:latest"
 echo "📄 构建日志: ${BUILD_LOG}"
 echo "🕒 完成时间: $(date +'%Y-%m-%d %H:%M:%S')"

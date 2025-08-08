@@ -28,9 +28,9 @@ RUN set -eux && \
     (apt update -qq && apt upgrade -qq) >/dev/null 2>&1 && \
     # 安装依赖时同样屏蔽输出
     DEBIAN_FRONTEND=noninteractive apt install -qq --no-install-recommends \
-        git git-lfs curl wget axel tree sudo unzip zip tar \
+        git credential-manager git-lfs curl wget axel tree sudo unzip zip tar \
         nano vim-tiny htop btop tmux net-tools iputils-ping procps lsof \
-        build-essential gcc g++ libgl1-mesa-glx libgl1 libglib2.0-0 libblas3 liblapack3 \
+        build-essential gcc g++ libgl1-mesa-glx libgl1  libglib2.0-0 libblas3 liblapack3 \
         ffmpeg unrar patool crudini dnsutils traceroute iperf3 nmap \
         jq sed gawk sqlite3 mysql-client postgresql-client \
         openssl ca-certificates gnupg python3 python3-pip python3-venv \

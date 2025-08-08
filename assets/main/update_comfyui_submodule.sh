@@ -1,3 +1,4 @@
+# update_comfyui_submodule.sh
 #!/bin/bash
 # 子模块更新脚本
 

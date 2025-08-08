@@ -9,4 +9,5 @@
 *.bak
 
 # 忽略 ComfyUI 子模块内的临时 JSON 文件
-/ComfyUI/custom_nodes/*.json
+/ComfyUI/custom_nodes/*.jsonComfyUI_old/
+backup_custom_nodes/
